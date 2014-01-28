@@ -1,5 +1,0 @@
-D:\Documents\Martus\VancoApi\src\VancoApi\obj\Debug\VancoApi.csprojResolveAssemblyReference.cache
-D:\Documents\Martus\VancoApi\src\VancoApi\bin\VancoApi.dll
-D:\Documents\Martus\VancoApi\src\VancoApi\bin\VancoApi.pdb
-D:\Documents\Martus\VancoApi\src\VancoApi\obj\Debug\VancoApi.dll
-D:\Documents\Martus\VancoApi\src\VancoApi\obj\Debug\VancoApi.pdb
