@@ -5,7 +5,8 @@
 	void Button_Click(object sender, EventArgs args)
 	{
 		var vanco = new VancoApi();
-		vanco.Login();
+		var sessionid = vanco.Login();
+		Response.Write(sessionid);
 	}
 </script>
 

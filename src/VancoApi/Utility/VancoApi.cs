@@ -34,7 +34,7 @@ namespace Site
 			VancoUri = dict["Uri"]; //"https://www.vancodev.com/cgi-bin/wsdebug.vps"
 		}
 
-		public void Login()
+		public string Login()
 		{
 			var qs = new Dictionary<string, object>();
 			qs["nvpvar"] = string.Empty;
@@ -43,16 +43,16 @@ namespace Site
 			qs["password"] = VancoPassword;
 			qs["requestid"] = DateTime.Now.Ticks;
 
-			//var response = HttpPost(VancoUri, qs);
-			var response = "nvpvar=O41MKt44jIZo_bP73AyzuU81YDTMk9ktmDOh4UjW999ddJ1hH35exnE6f-I4aHdKht3yHotg-cqE1uh2jZhbQQgzokv1ypAmFLt8IVxANLc="; //ok
+			var response = HttpPost(VancoUri, qs);
 
 			var responseQs = HttpUtility.ParseQueryString(response);
-			var nvpvar = DecodeMessage(responseQs["nvpvar"] + "=", VancoEncryptionKey);
+			var nvpvar = DecodeMessage(responseQs["nvpvar"], VancoEncryptionKey);
 			var resultQs = HttpUtility.ParseQueryString(nvpvar);
 
 			var sessionId = resultQs["sessionid"];
 			var requestId = resultQs["requestid"];
-			//TODO: something with the sessionid
+
+			return sessionId;
 		}
 
 		private static string HttpPost(string url, IDictionary<string, object> qs = null)
@@ -106,13 +106,13 @@ namespace Site
 			// Base64 decode
 			var bytes = Convert.FromBase64String(message);
 			// Pad length before decrypting
-			bytes = Pad(bytes, 4.0, "=");
+			//bytes = Pad(bytes, 4.0, "=");
 			// Decrypt Rijndael
 			bytes = Decrypt(bytes, encryptionKey);
 			// De-gzip
-			bytes = DecompressData2(bytes);
+			message = DecompressData3(bytes);
 			// Convert to Ascii
-			message = Encoding.ASCII.GetString(bytes);
+			//message = Encoding.ASCII.GetString(bytes);
 			return message.Trim();
 		}
 
@@ -140,6 +140,23 @@ namespace Site
 						CopyStream(inputStream, outZStream);
 						outZStream.finish();
 						return outputStream.ToArray();
+					}
+				}
+			}
+		}
+
+		private static string DecompressData3(byte[] inData)
+		{
+			using (var mem = new MemoryStream(inData))
+			{
+				using (var gz = new DeflateStream(mem, CompressionMode.Decompress))
+				{
+					using (var sw = new StreamReader(gz))
+					{
+						string outData = sw.ReadLine();
+						sw.Close();
+
+						return outData;
 					}
 				}
 			}
@@ -199,27 +216,29 @@ namespace Site
 			return encrypted;
 		}
 
-		private static byte[] Decrypt(byte[] data, string encryptionKey)
+		public static byte[] Decrypt(byte[] data, string encryptionKey)
 		{
 			byte[] decrypted;
-
-			using (var rijAlg = new RijndaelManaged())
+			// Create an AesManaged object 
+			// with the specified key and IV. 
+			using (var rijAlg = new AesManaged())
 			{
+				// below key used as an example, contact Vanco for your unique encryption key
 				rijAlg.Key = Encoding.ASCII.GetBytes(encryptionKey);
 				rijAlg.Padding = PaddingMode.None;
 				rijAlg.Mode = CipherMode.ECB;
-
 				var decryptor = rijAlg.CreateDecryptor(rijAlg.Key, rijAlg.IV);
-				using (var msEncrypt = new MemoryStream())
+				using (var msDecrypt = new MemoryStream())
 				{
-					using (var csDecrypt = new CryptoStream(msEncrypt, decryptor, CryptoStreamMode.Write))
+					using (var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Write))
 					{
 						csDecrypt.Write(data, 0, data.Length);
 					}
-					decrypted = msEncrypt.ToArray();
+					decrypted = msDecrypt.ToArray();
 				}
 			}
 
+			// Return the encrypted bytes from the memory stream. 
 			return decrypted;
 		}
 
