@@ -168,7 +168,8 @@ namespace Site
 			dict.Where(x => x.Value != null)
 			    .ToList()
 			    .ForEach(x => values[x.Key] = x.Value.ToString());
-			var message = values.ToString(); // string.Join("&", dict.Select(x => x.Key + "=" + x.Value));
+			var message = values.ToString();
+			//var message = string.Join("&", dict.Select(x => x.Key + "=" + x.Value));
 			return EncodeMessage(message, encryptionKey);
 		}
 
