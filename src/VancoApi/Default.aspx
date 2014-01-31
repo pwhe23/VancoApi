@@ -6,7 +6,22 @@
 	{
 		var vanco = new VancoApi();
 		var sessionid = vanco.Login();
-		Response.Write(sessionid);
+		Response.Write("SessionId: " + sessionid);
+		var response = vanco.SavePaymentMethod(new PaymentMethodRequest
+		                                       {
+			                                       SessionId = sessionid,
+												   CustomerId = "1",
+												   AccountType = "CC",
+												   AccountNumber = "36555500001111",
+												   CardBillingName = "Test",
+												   CardExpMonth = "12",
+												   CardExpYear = "2014",
+												   CardBillingAddr1 = "123 Main St",
+												   CardBillingCity = "Charlotte",
+												   CardBillingState = "NC",
+												   CardBillingZip = "29028",
+		                                       });
+		Response.Write("PaymentMethodRef: " + response.PaymentMethodRef);
 	}
 </script>
 

@@ -1,11 +1,13 @@
 ﻿
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Configuration;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Web;
@@ -41,24 +43,94 @@ namespace Site
 			qs["requesttype"] = "login";
 			qs["userid"] = VancoUserId;
 			qs["password"] = VancoPassword;
-			qs["requestid"] = DateTime.Now.Ticks;
+			qs["requestid"] = Guid.NewGuid().ToString("N");
 
-			var response = HttpPost(VancoUri, qs);
+			var response = VancoHttp(qs);
 
-			var responseQs = HttpUtility.ParseQueryString(response);
-			var nvpvar = DecodeMessage(responseQs["nvpvar"], VancoEncryptionKey);
-			var resultQs = HttpUtility.ParseQueryString(nvpvar);
-
-			var sessionId = resultQs["sessionid"];
-			var requestId = resultQs["requestid"];
+			var sessionId = response["sessionid"];
+			var requestId = response["requestid"];
 
 			return sessionId;
 		}
 
-		private static string HttpPost(string url, IDictionary<string, object> qs = null)
+		public PaymentMethodResponse SavePaymentMethod(PaymentMethodRequest pm)
+		{
+			var form = new Dictionary<string, object>();
+			form["requesttype"] = "eftaddeditpaymentmethod";
+			form["requestid"] = Guid.NewGuid().ToString("N");
+			form["clientid"] = VancoClientId;
+
+			if (!string.IsNullOrWhiteSpace(pm.CustomerRef))
+			{
+				form["customerref"] = pm.CustomerRef;
+			}
+			else if (!string.IsNullOrWhiteSpace(pm.CustomerId))
+			{
+				form["customerid"] = pm.CustomerId;
+			}
+			else
+			{
+				throw new ApplicationException("Either CustomerRef or CustomerId must be supplied");
+			}
+
+			if (pm.DeletePm)
+			{
+				form["deletepm"] = "Yes";
+			}
+
+			if (pm.AccountType == "C")
+			{
+				form["accounttype"] = "C";
+				form["accountnumber"] = pm.AccountNumber;
+				form["routingnumber"] = pm.RoutingNumber;
+			}
+			else if (pm.AccountType == "S")
+			{
+				form["accounttype"] = "S";
+				form["accountnumber"] = pm.AccountNumber;
+				form["routingnumber"] = pm.RoutingNumber;
+			}
+			else if (pm.AccountType == "CC")
+			{
+				form["accounttype"] = "CC";
+				form["accountnumber"] = pm.AccountNumber;
+				form["cardbillingname"] = pm.CardBillingName;
+				form["cardexpmonth"] = pm.CardExpMonth;
+				form["cardexpyear"] = pm.CardExpYear;
+				if (pm.SameCcBillingAddrAsCust)
+				{
+					form["sameccbillingaddrascust"] = "Yes";
+				}
+				else
+				{
+					form["sameccbillingaddrascust"] = "No";
+					form["cardbillingaddr1"] = pm.CardBillingAddr1;
+					form["cardbillingaddr2"] = pm.CardBillingAddr2;
+					form["cardbillingcity"] = pm.CardBillingCity;
+					form["cardbillingstate"] = pm.CardBillingState;
+					form["cardbillingzip"] = pm.CardBillingZip;
+				}
+			}
+
+			var qs = new Dictionary<string, object>();
+			qs["sessionid"] = pm.SessionId;
+			qs["nvpvar"] = EncodeVariables(form, VancoEncryptionKey);
+
+			var response = VancoHttp(qs);
+
+			return new PaymentMethodResponse
+			       {
+					   RequestId = response["requestid"],
+					   CardType = response["cardtype"],
+					   PaymentMethodRef = response["paymentmethodref"],
+					   PaymentMethodDeleted = response["paymentmethoddeleted"] == "Yes",
+			       };
+		}
+
+		private NameValueCollection VancoHttp(IDictionary<string, object> qs)
 		{
 			//build Uri
-			var builder = new UriBuilder(url) { Port = -1 };
+			var builder = new UriBuilder(VancoUri) { Port = -1 };
 			var values = HttpUtility.ParseQueryString(builder.Query);
 
 			//Populate querystring if provided
@@ -74,9 +146,30 @@ namespace Site
 			//send request
 			using (var client = new WebClient())
 			{
-				url = builder.Uri.ToString().Replace("nvpvar=&", "nvpvar="); //HACK: 
-				return client.DownloadString(url); 
+				var url = builder.Uri.ToString().Replace("nvpvar=&", "nvpvar="); //HACK: 
+				var response = client.DownloadString(url);
+
+				var responseQs = HttpUtility.ParseQueryString(response);
+				var nvpvar = DecodeMessage(responseQs["nvpvar"], VancoEncryptionKey);
+				var nvp = HttpUtility.ParseQueryString(nvpvar);
+
+				if (!string.IsNullOrWhiteSpace(nvp["errorlist"]))
+				{
+					throw new ApplicationException("Error: " + GetErrorMessages(nvp["errorlist"]));
+				}
+
+				return nvp;
 			}
+		}
+
+		private static string EncodeVariables(IDictionary<string, object> dict, string encryptionKey)
+		{
+			var values = HttpUtility.ParseQueryString(string.Empty);
+			dict.Where(x => x.Value != null)
+			    .ToList()
+			    .ForEach(x => values[x.Key] = x.Value.ToString());
+			var message = values.ToString(); // string.Join("&", dict.Select(x => x.Key + "=" + x.Value));
+			return EncodeMessage(message, encryptionKey);
 		}
 
 		private static string EncodeMessage(string message, string encryptionKey)
@@ -110,7 +203,7 @@ namespace Site
 			// Decrypt Rijndael
 			bytes = Decrypt(bytes, encryptionKey);
 			// De-gzip
-			message = DecompressData3(bytes);
+			message = DecompressData(bytes);
 			// Convert to Ascii
 			//message = Encoding.ASCII.GetString(bytes);
 			return message.Trim();
@@ -128,24 +221,7 @@ namespace Site
 			}
 		}
 
-		//Throws "inflating: unknown compression method"
-		private static byte[] DecompressData(byte[] inData)
-		{
-			using (var outputStream = new MemoryStream())
-			{
-				using (var outZStream = new ZOutputStream(outputStream))
-				{
-					using (var inputStream = new MemoryStream(inData))
-					{
-						CopyStream(inputStream, outZStream);
-						outZStream.finish();
-						return outputStream.ToArray();
-					}
-				}
-			}
-		}
-
-		private static string DecompressData3(byte[] inData)
+		private static string DecompressData(byte[] inData)
 		{
 			using (var mem = new MemoryStream(inData))
 			{
@@ -157,22 +233,6 @@ namespace Site
 						sw.Close();
 
 						return outData;
-					}
-				}
-			}
-		}
-
-		//Is able to decompress about 50% of the time, other is incoherent
-		private static byte[] DecompressData2(byte[] bytes)
-		{
-			using (var input = new MemoryStream(bytes))
-			{
-				using (var ds = new DeflateStream(input, CompressionMode.Decompress))
-				{
-					using (var output = new MemoryStream())
-					{
-						ds.CopyTo(output);
-						return output.ToArray();
 					}
 				}
 			}
@@ -252,5 +312,59 @@ namespace Site
 			}
 			output.Flush();
 		}
+
+		private static readonly Dictionary<string, string> _Errors = new Dictionary<string, string>
+		{
+			{ "495", "Field Contains Invalid Characters" },
+		};
+
+		private static string GetErrorMessages(string errorlist)
+		{
+			return String.Join(",", errorlist.Split(',')
+			                                 .Select(x => _Errors.ContainsKey(x) ? _Errors[x] : x));
+		}
+	};
+
+	public class PaymentMethodRequest
+	{
+		public string SessionId { get; set; }
+		public string CustomerRef { get; set; }
+		public string CustomerId { get; set; }
+		public string PaymentMethodRef { get; set; }
+		public bool DeletePm { get; set; }
+		public string AccountType { get; set; }
+		public string AccountNumber { get; set; }
+		public string RoutingNumber { get; set; }
+		public string CardBillingName { get; set; }
+		public string CardExpMonth { get; set; }
+		public string CardExpYear { get; set; }
+		public bool SameCcBillingAddrAsCust { get; set; }
+		public string CardBillingAddr1 { get; set; }
+		public string CardBillingAddr2 { get; set; }
+		public string CardBillingCity { get; set; }
+		public string CardBillingState { get; set; }
+		public string CardBillingZip { get; set; }
+	};
+
+	public class PaymentMethodResponse
+	{
+		public string RequestId { get; set; }
+		public string CardType { get; set; }
+		public string PaymentMethodRef { get; set; }
+		public bool PaymentMethodDeleted { get; set; }
+	};
+
+	public class Trnx
+	{
+		public string SessionId { get; set; }
+		public string CustomerRef { get; set; }
+		public string CustomerId { get; set; }
+		public string CustomerName { get; set; }
+		public string CustomerAddress1 { get; set; }
+		public string CustomerAddress2 { get; set; }
+		public string CustomerCity { get; set; }
+		public string CustomerState { get; set; }
+		public string CustomerZip { get; set; }
+		public string CustomePhone { get; set; }
 	};
 }
