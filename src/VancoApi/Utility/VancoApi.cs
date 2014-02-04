@@ -146,7 +146,8 @@ namespace Site
 			//send request
 			using (var client = new WebClient())
 			{
-				var url = builder.Uri.ToString().Replace("nvpvar=&", "nvpvar="); //HACK: 
+				var url = builder.Uri.ToString().Replace("nvpvar=&", "nvpvar="); //HACK:
+				//var url = VancoUri + "?" + string.Join("&", qs.Select(x => x.Key + "=" + x.Value)).Replace("nvpvar=&", "nvpvar="); //HACK:
 				var response = client.DownloadString(url);
 
 				var responseQs = HttpUtility.ParseQueryString(response);
@@ -168,8 +169,8 @@ namespace Site
 			dict.Where(x => x.Value != null)
 			    .ToList()
 			    .ForEach(x => values[x.Key] = x.Value.ToString());
-			var message = values.ToString().Replace("+", "%20");
-			//var message = string.Join("&", dict.Select(x => x.Key + "=" + x.Value));
+			//var message = values.ToString().Replace("+", "%20");
+			var message = string.Join("&", dict.Select(x => x.Key + "=" + x.Value));
 			return EncodeMessage(message, encryptionKey);
 		}
 
