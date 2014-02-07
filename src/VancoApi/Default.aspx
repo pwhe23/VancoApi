@@ -7,20 +7,26 @@
 		var vanco = new VancoApi();
 		var sessionid = vanco.Login();
 		Response.Write("SessionId: " + sessionid);
-		var response = vanco.SavePaymentMethod(new PaymentMethodRequest
-		                                       {
-			                                       SessionId = sessionid,
-												   CustomerId = "1",
-												   AccountType = "CC",
-												   AccountNumber = "36555500001111",
-												   CardBillingName = "Test",
-												   CardExpMonth = "12",
-												   CardExpYear = "14",
-												   CardBillingAddr1 = "123 Main St",
-												   CardBillingCity = "Charlotte",
-												   CardBillingState = "NC",
-												   CardBillingZip = "29028",
-		                                       });
+		var response = vanco.Eft(new EftRequest
+								 {
+									 SessionId = sessionid,
+									 CustomerId = "1",
+									 IsDebitCardOnly = false,
+									 AddNewCustomer = true,
+									 Name = "Test",
+									 Email = "test@example.com",
+									 BillingAddr1 = "123 Main St",
+									 BillingCity = "Charlotte",
+									 BillingState = "NC",
+									 BillingZip = "29028",
+									 AccountType = "CC",
+									 NameOnCard = "Test",
+									 AccountNumber = "36555500001111",
+									 //RoutingNumber = 
+									 ExpMonth = "12",
+									 ExpYear = "14",
+
+								 });
 		Response.Write("PaymentMethodRef: " + response.PaymentMethodRef);
 	}
 </script>

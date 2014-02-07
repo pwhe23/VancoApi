@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Configuration;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -46,6 +47,7 @@ namespace Site
 			qs["requestid"] = Guid.NewGuid().ToString("N");
 
 			var response = VancoHttp(qs);
+			//var response = ParseVancoResponse("nvpvar=BPRUf4hPQGCGlw9MQN6RjyvNrYD5o15Qw-BIO6Db_xzg40ZR5KwHXbMbFa5ssu5oMUiIEODXVMgH_h1sJRzoxONt8_9fE9yqj37xFGnguPk=", VancoEncryptionKey);
 
 			var sessionId = response["sessionid"];
 			var requestId = response["requestid"];
@@ -53,80 +55,97 @@ namespace Site
 			return sessionId;
 		}
 
-		public PaymentMethodResponse SavePaymentMethod(PaymentMethodRequest pm)
+		public EftResponse Eft(EftRequest model)
 		{
+			if (string.IsNullOrWhiteSpace(model.SessionId)) throw new ApplicationException("SessionId is required");
+
 			var form = new Dictionary<string, object>();
-			form["requesttype"] = "eftaddeditpaymentmethod";
+			form["requesttype"] = "efttransparentredirect";
 			form["requestid"] = Guid.NewGuid().ToString("N");
 			form["clientid"] = VancoClientId;
+			form["urltoredirect"] = "";
 
-			if (!string.IsNullOrWhiteSpace(pm.CustomerRef))
+			if (!string.IsNullOrWhiteSpace(model.CustomerRef))
 			{
-				form["customerref"] = pm.CustomerRef;
+				form["customerref"] = model.CustomerRef;
 			}
-			else if (!string.IsNullOrWhiteSpace(pm.CustomerId))
+			else if (!string.IsNullOrWhiteSpace(model.CustomerId))
 			{
-				form["customerid"] = pm.CustomerId;
+				form["customerid"] = model.CustomerId;
 			}
 			else
 			{
 				throw new ApplicationException("Either CustomerRef or CustomerId must be supplied");
 			}
 
-			if (pm.DeletePm)
-			{
-				form["deletepm"] = "Yes";
-			}
+			form["isdebitcardonly"] = model.IsDebitCardOnly ? "Yes" : "No";
 
-			if (pm.AccountType == "C")
+			if (string.IsNullOrWhiteSpace(model.CustomerId) && string.IsNullOrWhiteSpace(model.CustomerRef) && string.IsNullOrWhiteSpace(model.Name))
+				throw new ApplicationException("Name is required");
+
+			if (string.IsNullOrWhiteSpace(model.AccountType)) throw new ApplicationException("AccountType is required");
+			if (string.IsNullOrWhiteSpace(model.AccountNumber)) throw new ApplicationException("AccountNumber is required");
+
+			if (model.AccountType == "CC")
 			{
-				form["accounttype"] = "C";
-				form["accountnumber"] = pm.AccountNumber;
-				form["routingnumber"] = pm.RoutingNumber;
+				if (string.IsNullOrWhiteSpace(model.BillingAddr1)) throw new ApplicationException("BillingAddr1 is required");
+				if (string.IsNullOrWhiteSpace(model.BillingCity)) throw new ApplicationException("BillingCity is required");
+				if (string.IsNullOrWhiteSpace(model.BillingState)) throw new ApplicationException("BillingState is required");
+				if (string.IsNullOrWhiteSpace(model.BillingZip)) throw new ApplicationException("BillingZip is required");
+				if (string.IsNullOrWhiteSpace(model.NameOnCard)) throw new ApplicationException("NameOnCard is required");
+				if (string.IsNullOrWhiteSpace(model.ExpMonth)) throw new ApplicationException("ExpMonth is required");
+				if (string.IsNullOrWhiteSpace(model.ExpYear)) throw new ApplicationException("ExpYear is required");
+				if (model.BillingState.Length != 2) throw new ApplicationException("BillingState length must be 2 digits");
+				if (model.ExpMonth.Length != 2) throw new ApplicationException("ExpMonth length must be 2 digits");
+				if (model.ExpYear.Length != 2) throw new ApplicationException("ExpYear length must be 2 digits");
 			}
-			else if (pm.AccountType == "S")
+			else if (model.AccountType == "C" || model.AccountType == "S")
 			{
-				form["accounttype"] = "S";
-				form["accountnumber"] = pm.AccountNumber;
-				form["routingnumber"] = pm.RoutingNumber;
+				if (string.IsNullOrWhiteSpace(model.RoutingNumber)) throw new ApplicationException("RoutingNumber is required");
+				if (model.RoutingNumber.Length != 9) throw new ApplicationException("RoutingNumber length must be 9 digits");
 			}
-			else if (pm.AccountType == "CC")
+			else
 			{
-				form["accounttype"] = "CC";
-				form["accountnumber"] = pm.AccountNumber;
-				form["cardbillingname"] = pm.CardBillingName;
-				form["cardexpmonth"] = pm.CardExpMonth;
-				form["cardexpyear"] = pm.CardExpYear;
-				if (pm.SameCcBillingAddrAsCust)
-				{
-					form["sameccbillingaddrascust"] = "Yes";
-				}
-				else
-				{
-					form["sameccbillingaddrascust"] = "No";
-					form["cardbillingaddr1"] = pm.CardBillingAddr1;
-					form["cardbillingaddr2"] = pm.CardBillingAddr2;
-					form["cardbillingcity"] = pm.CardBillingCity;
-					form["cardbillingstate"] = pm.CardBillingState;
-					form["cardbillingzip"] = pm.CardBillingZip;
-				}
+				throw new ApplicationException("AccountType is invalid");
 			}
 
 			var qs = new Dictionary<string, object>();
-			qs["sessionid"] = pm.SessionId;
+			qs["sessionid"] = model.SessionId;
 			qs["nvpvar"] = EncodeVariables(form, VancoEncryptionKey);
+			qs["newcustomer"] = model.AddNewCustomer ? "true" : "false";
+			qs["name"] = model.Name;
+			qs["email"] = model.Email;
+			qs["billingaddr1"] = model.BillingAddr1;
+			qs["billingaddr2"] = model.BillingAddr2;
+			qs["billingcity"] = model.BillingCity;
+			qs["billingstate"] = model.BillingState;
+			qs["billingzip"] = model.BillingZip;
+			qs["accounttype"] = model.AccountType;
+			qs["name_on_card"] = model.NameOnCard;
+			qs["accountnumber"] = model.AccountNumber;
+			qs["routingnumber"] = model.RoutingNumber;
+			qs["expmonth"] = model.ExpMonth;
+			qs["expyear"] = model.ExpYear;
 
 			var response = VancoHttp(qs);
 
-			return new PaymentMethodResponse
-			       {
-					   RequestId = response["requestid"],
-					   CardType = response["cardtype"],
-					   PaymentMethodRef = response["paymentmethodref"],
-					   PaymentMethodDeleted = response["paymentmethoddeleted"] == "Yes",
-			       };
+			return new EftResponse
+			{
+				SessionId = response["sessionid"],
+				RequestType = response["requesttype"],
+				RequestId = response["requestid"],
+				ClientId = response["clientid"],
+				CustomerId = response["customerid"],
+				CustomerRef = response["customerref"],
+				IsDebitCardOnly = response["isdebitcardonly"] == "Yes",
+				PaymentMethodRef = response["paymentmethodref"],
+				ErrorList = response["errorlist"],
+				Last4 = response["last4"],
+				VisaMcType = response["visamctype"],
+				CardType = response["cardtype"],
+			};
 		}
-
+		
 		private NameValueCollection VancoHttp(IDictionary<string, object> qs)
 		{
 			//build Uri
@@ -146,21 +165,29 @@ namespace Site
 			//send request
 			using (var client = new WebClient())
 			{
-				var url = builder.Uri.ToString().Replace("nvpvar=&", "nvpvar="); //HACK:
-				//var url = VancoUri + "?" + string.Join("&", qs.Select(x => x.Key + "=" + x.Value)).Replace("nvpvar=&", "nvpvar="); //HACK:
+				//var url = builder.Uri.ToString();
+				var url = VancoUri + "?" + string.Join("&", qs.Select(x => x.Key + "=" + x.Value));
+				url = url.Replace("nvpvar=&", "nvpvar="); //.Replace("/", "_").Replace("+", "-"); //HACK:
+				Debug.WriteLine("GET: " + url);
 				var response = client.DownloadString(url);
-
-				var responseQs = HttpUtility.ParseQueryString(response);
-				var nvpvar = DecodeMessage(responseQs["nvpvar"], VancoEncryptionKey);
-				var nvp = HttpUtility.ParseQueryString(nvpvar);
-
-				if (!string.IsNullOrWhiteSpace(nvp["errorlist"]))
-				{
-					throw new ApplicationException("Error: " + GetErrorMessages(nvp["errorlist"]));
-				}
-
-				return nvp;
+				return ParseVancoResponse(response, VancoEncryptionKey);
 			}
+		}
+
+		private static NameValueCollection ParseVancoResponse(string response, string vancoEncryptionKey)
+		{
+			Debug.WriteLine("RESPONSE: " + response);
+			var responseQs = HttpUtility.ParseQueryString(response);
+			var nvpvar = DecodeMessage(responseQs["nvpvar"], vancoEncryptionKey);
+			Debug.WriteLine("NVPVAR: " + nvpvar);
+			var nvp = HttpUtility.ParseQueryString(nvpvar);
+
+			if (!string.IsNullOrWhiteSpace(nvp["errorlist"]))
+			{
+				throw new ApplicationException("Error: " + GetErrorMessages(nvp["errorlist"]));
+			}
+
+			return nvp;
 		}
 
 		private static string EncodeVariables(IDictionary<string, object> dict, string encryptionKey)
@@ -176,13 +203,14 @@ namespace Site
 
 		private static string EncodeMessage(string message, string encryptionKey)
 		{
+			Debug.WriteLine("MESSAGE: " + message);
 			var inData = Encoding.ASCII.GetBytes(message);
 
 			//1. Compress
 			var outData = CompressData(inData);
 
 			//2. Pad
-			outData = Pad(outData, 16.0, " ");
+			outData = Pad(outData);
 
 			//3. Encrypt
 			if (encryptionKey != null)
@@ -191,7 +219,8 @@ namespace Site
 			}
 
 			//4. Base 64 Encode
-			return Convert.ToBase64String(outData);
+			var encoded = Convert.ToBase64String(outData);
+			return encoded; //.Replace("/", "_").Replace("+", "-");
 		}
 
 		private static string DecodeMessage(string message, string encryptionKey)
@@ -240,14 +269,14 @@ namespace Site
 			}
 		}
 
-		private static byte[] Pad(byte[] input, double mod, string pad)
+		private static byte[] Pad(byte[] input)
 		{
-			var roundUpLength = mod * Math.Ceiling((double)input.Length / mod);
+			double roundUpLength = 16.0 * Math.Ceiling((double)input.Length / 16.0);
 			var output = new byte[(int)roundUpLength];
 			input.CopyTo(output, 0);
 			for (var i = input.Length; i < (int)roundUpLength; i++)
 			{
-				output[i] = Encoding.ASCII.GetBytes(pad)[0];
+				output[i] = Encoding.ASCII.GetBytes(" ")[0];
 			}
 			return output;
 		}
@@ -327,33 +356,43 @@ namespace Site
 		}
 	};
 
-	public class PaymentMethodRequest
+	public class EftRequest
 	{
 		public string SessionId { get; set; }
-		public string CustomerRef { get; set; }
 		public string CustomerId { get; set; }
-		public string PaymentMethodRef { get; set; }
-		public bool DeletePm { get; set; }
+		public string CustomerRef { get; set; }
+		public bool IsDebitCardOnly { get; set; }
+		public bool AddNewCustomer { get; set; }
+		public string Name { get; set; }
+		public string Email { get; set; }
+		public string BillingAddr1 { get; set; }
+		public string BillingAddr2 { get; set; }
+		public string BillingCity { get; set; }
+		public string BillingState { get; set; }
+		public string BillingZip { get; set; }
 		public string AccountType { get; set; }
+		public string NameOnCard { get; set; }
 		public string AccountNumber { get; set; }
 		public string RoutingNumber { get; set; }
-		public string CardBillingName { get; set; }
-		public string CardExpMonth { get; set; }
-		public string CardExpYear { get; set; }
-		public bool SameCcBillingAddrAsCust { get; set; }
-		public string CardBillingAddr1 { get; set; }
-		public string CardBillingAddr2 { get; set; }
-		public string CardBillingCity { get; set; }
-		public string CardBillingState { get; set; }
-		public string CardBillingZip { get; set; }
+		public string ExpMonth { get; set; }
+		public string ExpYear { get; set; }
 	};
 
-	public class PaymentMethodResponse
+	public class EftResponse
 	{
+		public string SessionId { get; set; }
+		public string RequestType { get; set; }
 		public string RequestId { get; set; }
-		public string CardType { get; set; }
+		public string ClientId { get; set; }
+		public string UrlToRedirect { get; set; }
+		public string CustomerId { get; set; }
+		public string CustomerRef { get; set; }
+		public bool IsDebitCardOnly { get; set; }
 		public string PaymentMethodRef { get; set; }
-		public bool PaymentMethodDeleted { get; set; }
+		public string ErrorList { get; set; }
+		public string Last4 { get; set; }
+		public string VisaMcType { get; set; }
+		public string CardType { get; set; }
 	};
 
 	public class Trnx
