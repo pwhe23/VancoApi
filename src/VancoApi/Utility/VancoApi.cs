@@ -12,6 +12,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Web;
+using System.Web.DynamicData;
 using ComponentAce.Compression.Libs.zlib;
 
 namespace Site
@@ -46,7 +47,7 @@ namespace Site
 			qs["password"] = VancoPassword;
 			qs["requestid"] = Guid.NewGuid().ToString("N");
 
-			var response = VancoHttp(qs);
+			var response = VancoGet(qs);
 			//var response = ParseVancoResponse("nvpvar=BPRUf4hPQGCGlw9MQN6RjyvNrYD5o15Qw-BIO6Db_xzg40ZR5KwHXbMbFa5ssu5oMUiIEODXVMgH_h1sJRzoxONt8_9fE9yqj37xFGnguPk=", VancoEncryptionKey);
 
 			var sessionId = response["sessionid"];
@@ -111,23 +112,25 @@ namespace Site
 
 			var qs = new Dictionary<string, object>();
 			qs["sessionid"] = model.SessionId;
-			qs["nvpvar"] = EncodeVariables(form, VancoEncryptionKey);
-			qs["newcustomer"] = model.AddNewCustomer ? "true" : "false";
-			qs["name"] = model.Name;
-			qs["email"] = model.Email;
-			qs["billingaddr1"] = model.BillingAddr1;
-			qs["billingaddr2"] = model.BillingAddr2;
-			qs["billingcity"] = model.BillingCity;
-			qs["billingstate"] = model.BillingState;
-			qs["billingzip"] = model.BillingZip;
-			qs["accounttype"] = model.AccountType;
-			qs["name_on_card"] = model.NameOnCard;
-			qs["accountnumber"] = model.AccountNumber;
-			qs["routingnumber"] = model.RoutingNumber;
-			qs["expmonth"] = model.ExpMonth;
-			qs["expyear"] = model.ExpYear;
+			//qs["newcustomer"] = model.AddNewCustomer ? "true" : "false";
+			//qs["name"] = model.Name;
+			//qs["email"] = model.Email;
+			//qs["billingaddr1"] = model.BillingAddr1;
+			//qs["billingaddr2"] = model.BillingAddr2;
+			//qs["billingcity"] = model.BillingCity;
+			//qs["billingstate"] = model.BillingState;
+			//qs["billingzip"] = model.BillingZip;
+			//qs["accounttype"] = model.AccountType;
+			//qs["name_on_card"] = model.NameOnCard;
+			//qs["accountnumber"] = model.AccountNumber;
+			//qs["routingnumber"] = model.RoutingNumber;
+			//qs["expmonth"] = model.ExpMonth;
+			//qs["expyear"] = model.ExpYear;
 
-			var response = VancoHttp(qs);
+			var data = new Dictionary<string, object>();
+			data["nvpvar"] = EncodeVariables(form, VancoEncryptionKey);
+
+			var response = VancoPost(qs, data);
 
 			return new EftResponse
 			{
@@ -146,7 +149,7 @@ namespace Site
 			};
 		}
 		
-		private NameValueCollection VancoHttp(IDictionary<string, object> qs)
+		private NameValueCollection VancoGet(IDictionary<string, object> qs)
 		{
 			//build Uri
 			var builder = new UriBuilder(VancoUri) { Port = -1 };
@@ -165,11 +168,47 @@ namespace Site
 			//send request
 			using (var client = new WebClient())
 			{
-				//var url = builder.Uri.ToString();
-				var url = VancoUri + "?" + string.Join("&", qs.Select(x => x.Key + "=" + x.Value));
-				url = url.Replace("nvpvar=&", "nvpvar="); //.Replace("/", "_").Replace("+", "-"); //HACK:
+				var url = builder.Uri.ToString();
+				//var url = VancoUri + "?" + string.Join("&", qs.Select(x => x.Key + "=" + x.Value));
+				url = url.Replace("nvpvar=&", "nvpvar=");
 				Debug.WriteLine("GET: " + url);
 				var response = client.DownloadString(url);
+				return ParseVancoResponse(response, VancoEncryptionKey);
+			}
+		}
+
+		private NameValueCollection VancoPost(IDictionary<string, object> qs, IDictionary<string, object> form)
+		{
+			//build Uri
+			var builder = new UriBuilder(VancoUri) { Port = -1 };
+
+			//Populate querystring if provided
+			var qsValues = HttpUtility.ParseQueryString(builder.Query);
+			if (qs != null)
+			{
+				qs.Where(x => x.Value != null)
+				  .ToList()
+				  .ForEach(x => qsValues[x.Key] = x.Value.ToString());
+
+			}
+			builder.Query = qsValues.ToString();
+
+			//Form
+			var formValues = HttpUtility.ParseQueryString(string.Empty);
+			if (form != null)
+			{
+				form.Where(x => x.Value != null)
+				    .ToList()
+					.ForEach(x => formValues[x.Key] = x.Value.ToString());
+			}
+
+			//send request
+			using (var client = new WebClient())
+			{
+				var url = builder.Uri.ToString();
+				//var url = VancoUri + "?" + string.Join("&", qs.Where(x => x.Value != null).Select(x => x.Key + "=" + x.Value.ToString().Replace("/", "_").Replace("+", "-")));
+				Debug.WriteLine("POST: " + url + ", FORM: " + formValues);
+				var response = Encoding.ASCII.GetString(client.UploadValues(url, "POST", formValues));
 				return ParseVancoResponse(response, VancoEncryptionKey);
 			}
 		}
@@ -184,7 +223,9 @@ namespace Site
 
 			if (!string.IsNullOrWhiteSpace(nvp["errorlist"]))
 			{
-				throw new ApplicationException("Error: " + GetErrorMessages(nvp["errorlist"]));
+				var msg = GetErrorMessages(nvp["errorlist"]);
+				Debug.WriteLine("ERROR: " + msg);
+				throw new ApplicationException("Error: " + msg);
 			}
 
 			return nvp;
@@ -220,7 +261,7 @@ namespace Site
 
 			//4. Base 64 Encode
 			var encoded = Convert.ToBase64String(outData);
-			return encoded; //.Replace("/", "_").Replace("+", "-");
+			return encoded.Replace("/", "_").Replace("+", "-").TrimEnd();
 		}
 
 		private static string DecodeMessage(string message, string encryptionKey)
@@ -243,7 +284,7 @@ namespace Site
 		private static byte[] CompressData(byte[] inData)
 		{
 			using (var outMemoryStream = new MemoryStream())
-			using (var outZStream = new ZOutputStream(outMemoryStream, zlibConst.Z_DEFAULT_COMPRESSION))
+			using (var outZStream = new ZOutputStream(outMemoryStream, zlibConst.Z_BEST_COMPRESSION))
 			using (Stream inMemoryStream = new MemoryStream(inData))
 			{
 				CopyStream(inMemoryStream, outZStream);
