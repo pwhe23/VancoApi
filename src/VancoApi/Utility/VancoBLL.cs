@@ -1,9 +1,7 @@
 ﻿
 using System;
 using System.IO;
-using System.Security.Cryptography;
 using System.Text;
-using ComponentAce.Compression.Libs.zlib;
 
 namespace VancoBLL
 {
@@ -15,82 +13,94 @@ namespace VancoBLL
 		private static string VANCO_BASE_URI = "https://www.vancodev.com/cgi-bin/wsnvptest.vps";
 		private static string VANCO_RETURN_URL = "http://localhost/";
 
-		public static string EncryptAndEncodeMessage(string message, string encryptionKey)
+		public static string EncryptAndEncodeMessage(string message)
 		{
-			var inData = Encoding.ASCII.GetBytes(message);
+
+			dynamic inData = Encoding.ASCII.GetBytes(message);
 
 			//1. Compress
-			byte[] outData = VancoHelper.CompressData(inData);
+
+			byte[] outData = null;
+			System.IO.MemoryStream mem = new System.IO.MemoryStream();
+			System.IO.Compression.DeflateStream gz = new System.IO.Compression.DeflateStream(mem, System.IO.Compression.CompressionMode.Compress);
+			System.IO.StreamWriter sw = new System.IO.StreamWriter(gz);
+			sw.Write(message);
+			sw.Close();
+			outData = mem.ToArray();
 
 			//2. Pad
-			outData = VancoHelper.Pad(outData);
+
+			outData = Pad(outData);
 
 			//3. Encrypt
-			outData = VancoHelper.Encrypt(outData, encryptionKey);
+
+			outData = Encrypt(outData);
 
 			//4. Base 64 Encode
 			return Convert.ToBase64String(outData);
+
+
 		}
 
-		public static byte[] CompressData(byte[] inData)
-		{
-			using (var outMemoryStream = new MemoryStream())
-			using (var outZStream = new ZOutputStream(outMemoryStream, zlibConst.Z_BEST_COMPRESSION))
-			using (Stream inMemoryStream = new MemoryStream(inData))
-			{
-				CopyStream(inMemoryStream, outZStream);
-				outZStream.finish();
-				return outMemoryStream.ToArray();
-			}
-		}
 
-		public static void CopyStream(System.IO.Stream input, System.IO.Stream output)
+		public static byte[] Encrypt(byte[] data)
 		{
-			var buffer = new byte[2000];
-			int len;
-			while ((len = input.Read(buffer, 0, 2000)) > 0)
-			{
-				output.Write(buffer, 0, len);
-			}
-			output.Flush();
-		}
 
-		public static byte[] Encrypt(byte[] data, string encryptionKey)
-		{
-			byte[] encrypted;
+			byte[] encrypted = null;
 
 			// Create an RijndaelManaged object 
+
 			// with the specified key and IV. 
-			using (var rijAlg = new RijndaelManaged())
+
+			using (var rijAlg = new System.Security.Cryptography.AesManaged())
 			{
-				rijAlg.Key = Encoding.ASCII.GetBytes(encryptionKey);
-				rijAlg.Padding = PaddingMode.None;
-				rijAlg.Mode = CipherMode.ECB;
-				var encryptor = rijAlg.CreateEncryptor(rijAlg.Key, rijAlg.IV);
+
+				rijAlg.Key = Encoding.ASCII.GetBytes("09KzF2qMBy58ZWg137N$I4h6UwJvp!ij");
+
+				rijAlg.Padding = System.Security.Cryptography.PaddingMode.None;
+
+				rijAlg.Mode = System.Security.Cryptography.CipherMode.ECB;
+
+				dynamic encryptor = rijAlg.CreateEncryptor(rijAlg.Key, rijAlg.IV);
+
 				using (var msEncrypt = new MemoryStream())
 				{
-					using (var csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
+
+					using (var csEncrypt = new System.Security.Cryptography.CryptoStream(msEncrypt, encryptor, System.Security.Cryptography.CryptoStreamMode.Write))
 					{
+
 						csEncrypt.Write(data, 0, data.Length);
 					}
+
 					encrypted = msEncrypt.ToArray();
+
 				}
 			}
 
 			// Return the encrypted bytes from the memory stream. 
+
 			return encrypted;
+
 		}
+
 
 		public static byte[] Pad(byte[] input)
 		{
-			double roundUpLength = 16.0 * Math.Ceiling((double)input.Length / 16.0);
-			var output = new byte[(int)roundUpLength];
+
+			double roundUpLength = 16.0 * Math.Ceiling(Convert.ToDouble(input.Length) / 16.0);
+
+			dynamic output = new byte[Convert.ToInt32(roundUpLength)];
+
+
 			input.CopyTo(output, 0);
-			for (var i = input.Length; i < (int)roundUpLength; i++)
+
+			for (int i = input.Length; i <= Convert.ToInt32(roundUpLength) - 1; i++)
 			{
 				output[i] = Encoding.ASCII.GetBytes(" ")[0];
 			}
+
 			return output;
+
 		}
 	}
 }

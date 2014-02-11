@@ -244,7 +244,7 @@ namespace Site
 			var message = string.Join("&", dict.Select(x => x.Key + "=" + x.Value));
 
 			Debug.WriteLine("MESSAGE: " + message);
-			message = VancoHelper.EncryptAndEncodeMessage(message, encryptionKey);
+			message = VancoHelper.EncryptAndEncodeMessage(message);
 
 			return message.Replace("/", "_").Replace("+", "-").TrimEnd();
 		}
