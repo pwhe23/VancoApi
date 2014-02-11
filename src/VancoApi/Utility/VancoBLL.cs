@@ -15,7 +15,7 @@ namespace VancoBLL
 		private static string VANCO_BASE_URI = "https://www.vancodev.com/cgi-bin/wsnvptest.vps";
 		private static string VANCO_RETURN_URL = "http://localhost/";
 
-		public static string EncryptAndEncodeMessage(string message)
+		public static string EncryptAndEncodeMessage(string message, string encryptionKey)
 		{
 			var inData = Encoding.ASCII.GetBytes(message);
 
@@ -26,7 +26,7 @@ namespace VancoBLL
 			outData = VancoHelper.Pad(outData);
 
 			//3. Encrypt
-			outData = VancoHelper.Encrypt(outData);
+			outData = VancoHelper.Encrypt(outData, encryptionKey);
 
 			//4. Base 64 Encode
 			return Convert.ToBase64String(outData);
@@ -35,7 +35,7 @@ namespace VancoBLL
 		public static byte[] CompressData(byte[] inData)
 		{
 			using (var outMemoryStream = new MemoryStream())
-			using (var outZStream = new ZOutputStream(outMemoryStream, zlibConst.Z_DEFAULT_COMPRESSION))
+			using (var outZStream = new ZOutputStream(outMemoryStream, zlibConst.Z_BEST_COMPRESSION))
 			using (Stream inMemoryStream = new MemoryStream(inData))
 			{
 				CopyStream(inMemoryStream, outZStream);
@@ -44,7 +44,7 @@ namespace VancoBLL
 			}
 		}
 
-		private static void CopyStream(System.IO.Stream input, System.IO.Stream output)
+		public static void CopyStream(System.IO.Stream input, System.IO.Stream output)
 		{
 			var buffer = new byte[2000];
 			int len;
@@ -55,7 +55,7 @@ namespace VancoBLL
 			output.Flush();
 		}
 
-		public static byte[] Encrypt(byte[] data)
+		public static byte[] Encrypt(byte[] data, string encryptionKey)
 		{
 			byte[] encrypted;
 
@@ -63,7 +63,7 @@ namespace VancoBLL
 			// with the specified key and IV. 
 			using (var rijAlg = new RijndaelManaged())
 			{
-				rijAlg.Key = Encoding.ASCII.GetBytes(VANCO_ENCRYPTION_KEY);
+				rijAlg.Key = Encoding.ASCII.GetBytes(encryptionKey);
 				rijAlg.Padding = PaddingMode.None;
 				rijAlg.Mode = CipherMode.ECB;
 				var encryptor = rijAlg.CreateEncryptor(rijAlg.Key, rijAlg.IV);
@@ -91,21 +91,6 @@ namespace VancoBLL
 				output[i] = Encoding.ASCII.GetBytes(" ")[0];
 			}
 			return output;
-		}
-
-		private static string GetQuerystring(int orderId)
-		{
-			var nvpvar = @"{NVPVARIABLESHERE}A";
-			var message = EncryptAndEncodeMessage(nvpvar);
-			return message.Replace("/", "_").Replace("+", "-");
-		}
-
-		private static string ADDITIONALinfo = "?nvpvar={0}&name";
-		public static string GetUri(int orderId, string customerName, string customerAddress, string customerCity, string customerState, string customerZip)
-		{
-			var nvpvar = GetQuerystring(orderId);
-			var uri = VANCO_BASE_URI + ADDITIONALinfo;
-			return string.Format(uri, nvpvar, customerName, customerAddress, customerCity, customerState, customerZip, VANCO_RETURN_URL);
 		}
 	}
 }

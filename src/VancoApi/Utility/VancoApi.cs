@@ -11,7 +11,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Web;
-using ComponentAce.Compression.Libs.zlib;
+using VancoBLL;
 
 namespace Site
 {
@@ -163,14 +163,16 @@ namespace Site
 			}
 			builder.Query = values.ToString();
 
-			//send request
 			using (var client = new WebClient())
 			{
 				var url = builder.Uri.ToString();
-				//var url = VancoUri + "?" + string.Join("&", qs.Select(x => x.Key + "=" + x.Value));
-				url = url.Replace("nvpvar=&", "nvpvar=");
+				url = url.Replace("nvpvar=&", "nvpvar="); //HACK:
+
+				// send Request
 				Debug.WriteLine("GET: " + url);
 				var response = client.DownloadString(url);
+				
+				// process Response
 				return ParseVancoResponse(response, VancoEncryptionKey);
 			}
 		}
@@ -200,13 +202,15 @@ namespace Site
 					.ForEach(x => formValues[x.Key] = x.Value.ToString());
 			}
 
-			//send request
 			using (var client = new WebClient())
 			{
 				var url = builder.Uri.ToString();
-				//var url = VancoUri + "?" + string.Join("&", qs.Where(x => x.Value != null).Select(x => x.Key + "=" + x.Value.ToString().Replace("/", "_").Replace("+", "-")));
+
+				// send Request
 				Debug.WriteLine("POST: " + url + ", FORM: " + formValues);
 				var response = Encoding.ASCII.GetString(client.UploadValues(url, "POST", formValues));
+				
+				// process Response
 				return ParseVancoResponse(response, VancoEncryptionKey);
 			}
 		}
@@ -216,6 +220,7 @@ namespace Site
 			Debug.WriteLine("RESPONSE: " + response);
 			var responseQs = HttpUtility.ParseQueryString(response);
 			var nvpvar = DecodeMessage(responseQs["nvpvar"], vancoEncryptionKey);
+			
 			Debug.WriteLine("NVPVAR: " + nvpvar);
 			var nvp = HttpUtility.ParseQueryString(nvpvar);
 
@@ -235,31 +240,13 @@ namespace Site
 			dict.Where(x => x.Value != null)
 			    .ToList()
 			    .ForEach(x => values[x.Key] = x.Value.ToString());
-			//var message = values.ToString().Replace("+", "%20");
+
 			var message = string.Join("&", dict.Select(x => x.Key + "=" + x.Value));
-			return EncodeMessage(message, encryptionKey);
-		}
 
-		private static string EncodeMessage(string message, string encryptionKey)
-		{
 			Debug.WriteLine("MESSAGE: " + message);
-			var inData = Encoding.ASCII.GetBytes(message);
+			message = VancoHelper.EncryptAndEncodeMessage(message, encryptionKey);
 
-			//1. Compress
-			var outData = CompressData(inData);
-
-			//2. Pad
-			outData = Pad(outData);
-
-			//3. Encrypt
-			if (encryptionKey != null)
-			{
-				outData = Encrypt(outData, encryptionKey);
-			}
-
-			//4. Base 64 Encode
-			var encoded = Convert.ToBase64String(outData);
-			return encoded.Replace("/", "_").Replace("+", "-").TrimEnd();
+			return message.Replace("/", "_").Replace("+", "-").TrimEnd();
 		}
 
 		private static string DecodeMessage(string message, string encryptionKey)
@@ -279,18 +266,6 @@ namespace Site
 			return message.Trim();
 		}
 
-		private static byte[] CompressData(byte[] inData)
-		{
-			using (var outMemoryStream = new MemoryStream())
-			using (var outZStream = new ZOutputStream(outMemoryStream, zlibConst.Z_BEST_COMPRESSION))
-			using (Stream inMemoryStream = new MemoryStream(inData))
-			{
-				CopyStream(inMemoryStream, outZStream);
-				outZStream.finish();
-				return outMemoryStream.ToArray();
-			}
-		}
-
 		private static string DecompressData(byte[] inData)
 		{
 			using (var mem = new MemoryStream(inData))
@@ -306,44 +281,6 @@ namespace Site
 					}
 				}
 			}
-		}
-
-		private static byte[] Pad(byte[] input)
-		{
-			double roundUpLength = 16.0 * Math.Ceiling((double)input.Length / 16.0);
-			var output = new byte[(int)roundUpLength];
-			input.CopyTo(output, 0);
-			for (var i = input.Length; i < (int)roundUpLength; i++)
-			{
-				output[i] = Encoding.ASCII.GetBytes(" ")[0];
-			}
-			return output;
-		}
-
-		private static byte[] Encrypt(byte[] data, string encryptionKey)
-		{
-			byte[] encrypted;
-
-			// Create an RijndaelManaged object 
-			// with the specified key and IV. 
-			using (var rijAlg = new RijndaelManaged())
-			{
-				rijAlg.Key = Encoding.ASCII.GetBytes(encryptionKey);
-				rijAlg.Padding = PaddingMode.None;
-				rijAlg.Mode = CipherMode.ECB;
-				var encryptor = rijAlg.CreateEncryptor(rijAlg.Key, rijAlg.IV);
-				using (var msEncrypt = new MemoryStream())
-				{
-					using (var csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
-					{
-						csEncrypt.Write(data, 0, data.Length);
-					}
-					encrypted = msEncrypt.ToArray();
-				}
-			}
-
-			// Return the encrypted bytes from the memory stream. 
-			return encrypted;
 		}
 
 		public static byte[] Decrypt(byte[] data, string encryptionKey)
@@ -370,17 +307,6 @@ namespace Site
 
 			// Return the encrypted bytes from the memory stream. 
 			return decrypted;
-		}
-
-		private static void CopyStream(Stream input, Stream output)
-		{
-			var buffer = new byte[2000];
-			int len;
-			while ((len = input.Read(buffer, 0, buffer.Length)) > 0)
-			{
-				output.Write(buffer, 0, len);
-			}
-			output.Flush();
 		}
 
 		private static readonly Dictionary<string, string> _Errors = new Dictionary<string, string>
