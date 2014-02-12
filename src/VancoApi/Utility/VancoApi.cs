@@ -62,7 +62,7 @@ namespace Site
 			form["requesttype"] = "efttransparentredirect";
 			form["requestid"] = Guid.NewGuid().ToString("N");
 			form["clientid"] = VancoClientId;
-			form["urltoredirect"] = "";
+			form["urltoredirect"] = "http://localhost/";
 
 			if (!string.IsNullOrWhiteSpace(model.CustomerRef))
 			{
@@ -110,20 +110,20 @@ namespace Site
 
 			var qs = new Dictionary<string, object>();
 			qs["sessionid"] = model.SessionId;
-			//qs["newcustomer"] = model.AddNewCustomer ? "true" : "false";
-			//qs["name"] = model.Name;
-			//qs["email"] = model.Email;
-			//qs["billingaddr1"] = model.BillingAddr1;
-			//qs["billingaddr2"] = model.BillingAddr2;
-			//qs["billingcity"] = model.BillingCity;
-			//qs["billingstate"] = model.BillingState;
-			//qs["billingzip"] = model.BillingZip;
-			//qs["accounttype"] = model.AccountType;
-			//qs["name_on_card"] = model.NameOnCard;
-			//qs["accountnumber"] = model.AccountNumber;
-			//qs["routingnumber"] = model.RoutingNumber;
-			//qs["expmonth"] = model.ExpMonth;
-			//qs["expyear"] = model.ExpYear;
+			qs["newcustomer"] = model.AddNewCustomer ? "true" : "false";
+			qs["name"] = model.Name;
+			qs["email"] = model.Email;
+			qs["billingaddr1"] = model.BillingAddr1;
+			qs["billingaddr2"] = model.BillingAddr2;
+			qs["billingcity"] = model.BillingCity;
+			qs["billingstate"] = model.BillingState;
+			qs["billingzip"] = model.BillingZip;
+			qs["accounttype"] = model.AccountType;
+			qs["name_on_card"] = model.NameOnCard;
+			qs["accountnumber"] = model.AccountNumber;
+			qs["routingnumber"] = model.RoutingNumber;
+			qs["expmonth"] = model.ExpMonth;
+			qs["expyear"] = model.ExpYear;
 
 			var data = new Dictionary<string, object>();
 			data["nvpvar"] = EncodeVariables(form, VancoEncryptionKey);
@@ -217,6 +217,12 @@ namespace Site
 
 		private static NameValueCollection ParseVancoResponse(string response, string vancoEncryptionKey)
 		{
+			if (response.Contains("http-equiv"))
+			{
+				var start = response.IndexOf("url=http://localhost/?") + 22;
+				var end = response.IndexOf("\">", start);
+				response = response.Substring(start, end - start);
+			}
 			Debug.WriteLine("RESPONSE: " + response);
 			var responseQs = HttpUtility.ParseQueryString(response);
 			var nvpvar = DecodeMessage(responseQs["nvpvar"], vancoEncryptionKey);
