@@ -17,3 +17,7 @@ To get started you need to enter the values into connectionStrings.config which 
 * UserId
 * Password
 * EncryptionKey
+
+To include this code into your project you only need the VancoApi.cs file, which is self-contained. The project itself is
+just a console app that demonstrates how to use the Api. I plan on keeping this project up-to-date with what I need to 
+interact with Vanco, but don't plan on attempting a full implementation (though pull requests are welcome).
