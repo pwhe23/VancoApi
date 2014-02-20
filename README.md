@@ -11,3 +11,9 @@ Currently Implemented:
 * Logout
 
 Implementation of additional Api calls should be very simple, feel free to submit pull requests
+
+To get started you need to enter the values into connectionStrings.config which you can get from Vanco:
+* ClientId
+* UserId
+* Password
+* EncryptionKey
