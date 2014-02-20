@@ -264,8 +264,10 @@ namespace Vanco
 			}
 		}
 
+		//REF: http://docs.vancodev.com/doku.php?id=errorcodes
 		private static readonly Dictionary<string, string> _Errors = new Dictionary<string, string>
 		{
+			{ "390", "Requesttype Not Authorized For User" },
 			{ "495", "Field Contains Invalid Characters" },
 		};
 
@@ -273,6 +275,12 @@ namespace Vanco
 		{
 			return String.Join(",", errorlist.Split(',')
 											 .Select(x => _Errors.ContainsKey(x) ? _Errors[x] : x));
+		}
+
+		public static DateTime? ParseDate(string str)
+		{
+			DateTime date;
+			return DateTime.TryParse(str, out date) ? date : (DateTime?)null;
 		}
 	};
 
@@ -362,6 +370,7 @@ namespace Vanco
 		}
 	};
 
+	//REF: http://docs.vancodev.com/doku.php?id=nvp:efttransparentredirect
 	public class EftRequest
 	{
 		public string RequestId { get; set; }
@@ -377,7 +386,7 @@ namespace Vanco
 		public string BillingCity { get; set; }
 		public string BillingState { get; set; }
 		public string BillingZip { get; set; }
-		public string AccountType { get; set; }
+		public AccountTypes AccountType { get; set; }
 		public string NameOnCard { get; set; }
 		public string AccountNumber { get; set; }
 		public string RoutingNumber { get; set; }
@@ -404,10 +413,9 @@ namespace Vanco
 			if (string.IsNullOrWhiteSpace(CustomerId) && string.IsNullOrWhiteSpace(CustomerRef) && string.IsNullOrWhiteSpace(Name))
 				throw new ApplicationException("Name is required");
 
-			if (string.IsNullOrWhiteSpace(AccountType)) throw new ApplicationException("AccountType is required");
 			if (string.IsNullOrWhiteSpace(AccountNumber)) throw new ApplicationException("AccountNumber is required");
 
-			if (AccountType == "CC")
+			if (AccountType == AccountTypes.CC)
 			{
 				if (string.IsNullOrWhiteSpace(BillingAddr1)) throw new ApplicationException("BillingAddr1 is required");
 				if (string.IsNullOrWhiteSpace(BillingCity)) throw new ApplicationException("BillingCity is required");
@@ -420,7 +428,7 @@ namespace Vanco
 				if (ExpMonth.Length != 2) throw new ApplicationException("ExpMonth length must be 2 digits");
 				if (ExpYear.Length != 2) throw new ApplicationException("ExpYear length must be 2 digits");
 			}
-			else if (AccountType == "C" || AccountType == "S")
+			else if (AccountType == AccountTypes.C || AccountType == AccountTypes.S)
 			{
 				if (string.IsNullOrWhiteSpace(RoutingNumber)) throw new ApplicationException("RoutingNumber is required");
 				if (RoutingNumber.Length != 9) throw new ApplicationException("RoutingNumber length must be 9 digits");
@@ -463,7 +471,7 @@ namespace Vanco
 			qs["billingcity"] = BillingCity;
 			qs["billingstate"] = BillingState;
 			qs["billingzip"] = BillingZip;
-			qs["accounttype"] = AccountType;
+			qs["accounttype"] = AccountType.ToString();
 			qs["name_on_card"] = NameOnCard;
 			qs["accountnumber"] = AccountNumber;
 			qs["routingnumber"] = RoutingNumber;
@@ -481,15 +489,14 @@ namespace Vanco
 				SessionId = dict["sessionid"],
 				RequestType = dict["requesttype"],
 				RequestId = dict["requestid"],
-				ClientId = dict["clientid"],
 				CustomerId = dict["customerid"],
 				CustomerRef = dict["customerref"],
 				IsDebitCardOnly = dict["isdebitcardonly"] == "Yes",
 				PaymentMethodRef = dict["paymentmethodref"],
 				ErrorList = dict["errorlist"],
 				Last4 = dict["last4"],
-				VisaMcType = dict["visamctype"],
-				CardType = dict["cardtype"],
+				VisaMcType = (CardBrands)Enum.Parse(typeof(CardBrands), dict["visamctype"].Replace(" ", ""), true),
+				CardType = (CardTypes)Enum.Parse(typeof(CardTypes), dict["cardtype"].Replace(" ", ""), true),
 			};
 
 			return response;
@@ -501,7 +508,6 @@ namespace Vanco
 		public string SessionId { get; set; }
 		public string RequestType { get; set; }
 		public string RequestId { get; set; }
-		public string ClientId { get; set; }
 		public string UrlToRedirect { get; set; }
 		public string CustomerId { get; set; }
 		public string CustomerRef { get; set; }
@@ -509,7 +515,268 @@ namespace Vanco
 		public string PaymentMethodRef { get; set; }
 		public string ErrorList { get; set; }
 		public string Last4 { get; set; }
-		public string VisaMcType { get; set; }
-		public string CardType { get; set; }
+		public CardBrands VisaMcType { get; set; }
+		public CardTypes CardType { get; set; }
+	};
+
+	//REF: http://docs.vancodev.com/doku.php?id=nvp:eftgetpaymentmethod
+	public class PaymentMethodsRequest
+	{
+		public string SessionId { get; set; }
+		public string RequestId { get; set; }
+		public string ClientId { get; set; }
+		public string CustomerRef { get; set; }
+		public string CustomerId { get; set; }
+		public string PaymentMethodRef { get; set; }
+
+		public PaymentMethodResponse Execute(VancoConnection conn)
+		{
+			// SessionId
+			if (string.IsNullOrWhiteSpace(SessionId))
+			{
+				SessionId = conn.SessionId;
+			}
+
+			// RequestId
+			if (string.IsNullOrWhiteSpace(RequestId))
+			{
+				RequestId = conn.CreateRequestId();
+			}
+
+			// Validation
+			if (string.IsNullOrWhiteSpace(SessionId)) throw new ApplicationException("SessionId is required");
+			if (string.IsNullOrWhiteSpace(RequestId)) throw new ApplicationException("RequestId is required");
+			if (string.IsNullOrWhiteSpace(conn.VancoClientId)) throw new ApplicationException("ClientId is required");
+
+			// QueryString
+			var qs = new Dictionary<string, object>();
+			qs["sessionid"] = SessionId;
+
+			// Data
+			var data = new Dictionary<string, object>();
+			data["requesttype"] = "eftgetpaymentmethod";
+			data["requestid"] = RequestId;
+			data["clientid"] = conn.VancoClientId;
+
+			if (!string.IsNullOrWhiteSpace(CustomerRef))
+			{
+				data["customerref"] = CustomerRef;
+			}
+			else if (!string.IsNullOrWhiteSpace(CustomerId))
+			{
+				data["customerid"] = CustomerId;
+			}
+			else
+			{
+				throw new ApplicationException("Either CustomerRef or CustomerId must be supplied");
+			}
+
+			data["paymentmethodref"] = PaymentMethodRef;
+
+			// Form
+			var form = new Dictionary<string, object>();
+			form["nvpvar"] = conn.EncodeNvpvar(data);
+
+			// Response
+			var dict = conn.HttpPost(qs, form);
+			var response = new PaymentMethodResponse
+			               {
+							   PaymentMethodCount = int.Parse(dict["paymentmethodcount"]),
+							   PaymentMethods = new List<PaymentMethod>(),
+			               };
+
+			for (var i = 0; i < response.PaymentMethodCount; i++)
+			{
+				response.PaymentMethods.Add(new PaymentMethod
+				                            {
+					                            PaymentMethodRef = dict["paymentmethodref_" + i],
+					                            IsDefault = dict["isdefault_" + i] == "YES",
+					                            AccountType = (AccountTypes)Enum.Parse(typeof(AccountTypes), dict["accounttype_" + i].Replace(" ", ""), true),
+												CardType = (CardBrands)Enum.Parse(typeof(CardBrands), dict["cardtype_" + i].Replace(" ", ""), true),
+					                            AccountNumber = dict["accountnumber_" + i],
+					                            RoutingNumber = dict["routingnumber_" + i],
+				                            });
+			}
+
+			return response;
+		}
+	};
+
+	public class PaymentMethodResponse
+	{	
+		public int PaymentMethodCount { get; set; }
+		public List<PaymentMethod> PaymentMethods { get; set; }
+	};
+
+	public class PaymentMethod
+	{
+		public string PaymentMethodRef { get; set; }
+		public bool IsDefault { get; set; }
+		public AccountTypes AccountType { get; set; }
+		public CardBrands CardType { get; set; }
+		public string AccountNumber { get; set; }
+		public string RoutingNumber { get; set; }
+	};
+
+	//REF: http://docs.vancodev.com/doku.php?id=nvp:eftaddcompletetransaction
+	public class TransactionRequest
+	{
+		public string SessionId { get; set; }
+		public string RequestId { get; set; }
+		public string CustomerRef { get; set; }
+		public string CustomerId { get; set; }
+		public string CustomerName { get; set; }
+		public string CustomerAddress1 { get; set; }
+		public string CustomerAddress2 { get; set; }
+		public string CustomerCity { get; set; }
+		public string CustomerState { get; set; }
+		public string CustomerZip { get; set; }
+		public string CustomerPhone { get; set; }
+		public PaymentMethod PaymentMethod { get; set; }
+		public bool IsDebitCardOnly { get; set; }
+		public decimal Amount { get; set; }
+		public DateTime? StartDate { get; set; }
+		public DateTime? EndDate { get; set; }
+		public Frequencies FrequencyCode { get; set; }
+		public TransactionTypes? TransactionTypeCode { get; set; }
+
+		public TransactionResponse Execute(VancoConnection conn)
+		{
+			// SessionId
+			if (string.IsNullOrWhiteSpace(SessionId))
+			{
+				SessionId = conn.SessionId;
+			}
+
+			// RequestId
+			if (string.IsNullOrWhiteSpace(RequestId))
+			{
+				RequestId = conn.CreateRequestId();
+			}
+
+			// Validation
+			if (string.IsNullOrWhiteSpace(SessionId)) throw new ApplicationException("SessionId is required");
+			if (string.IsNullOrWhiteSpace(RequestId)) throw new ApplicationException("RequestId is required");
+			if (string.IsNullOrWhiteSpace(conn.VancoClientId)) throw new ApplicationException("ClientId is required");
+			if (PaymentMethod == null) throw new ApplicationException("PaymentMethod is required");
+			if (Amount == 0m) throw new ApplicationException("Amount cannot be zero");
+
+			if (PaymentMethod.AccountType == AccountTypes.CC) //not needed if already on file
+			{
+				//if (string.IsNullOrWhiteSpace(CustomerName)) throw new ApplicationException("CustomerName is required");
+				//if (string.IsNullOrWhiteSpace(CustomerAddress1)) throw new ApplicationException("CustomerAddress1 is required");
+				//if (string.IsNullOrWhiteSpace(CustomerCity)) throw new ApplicationException("CustomerCity is required");
+				//if (string.IsNullOrWhiteSpace(CustomerState)) throw new ApplicationException("CustomerState is required");
+				//if (string.IsNullOrWhiteSpace(CustomerZip)) throw new ApplicationException("CustomerZip is required");
+			}
+
+			// QueryString
+			var qs = new Dictionary<string, object>();
+			qs["sessionid"] = SessionId;
+
+			// Data
+			var data = new Dictionary<string, object>();
+			data["requesttype"] = "eftaddcompletetransaction";
+			data["requestid"] = RequestId;
+			data["clientid"] = conn.VancoClientId;
+
+			if (!string.IsNullOrWhiteSpace(CustomerRef))
+			{
+				data["customerref"] = CustomerRef;
+			}
+			else if (!string.IsNullOrWhiteSpace(CustomerId))
+			{
+				data["customerid"] = CustomerId;
+			}
+			else
+			{
+				throw new ApplicationException("Either CustomerRef or CustomerId must be supplied");
+			}
+
+			data["customername"] = CustomerName;
+			data["customeraddress1"] = CustomerAddress1;
+			data["customeraddress2"] = CustomerAddress2;
+			data["customercity"] = CustomerCity;
+			data["customerstate"] = CustomerState;
+			data["customerzip"] = CustomerZip;
+			data["customerphone"] = CustomerPhone;
+
+			data["paymentmethodref"] = PaymentMethod.PaymentMethodRef;
+			data["isdebitcardonly"] = IsDebitCardOnly ? "Yes" : "No";
+
+			data["amount"] = Amount.ToString("0.00");
+			data["frequencycode"] = FrequencyCode.ToString();
+			if (StartDate.HasValue) data["startdate"] = StartDate.Value.ToString("yyyy-MM-dd");
+			if (EndDate.HasValue) data["enddate"] = EndDate.Value.ToString("yyyy-MM-dd");
+			if (TransactionTypeCode.HasValue) data["transactiontypecode"] = TransactionTypeCode.Value.ToString();
+
+			if (FrequencyCode == Frequencies.O)
+			{
+				data["startdate"] = "0000-00-00";
+			}
+
+			// Form
+			var form = new Dictionary<string, object>();
+			form["nvpvar"] = conn.EncodeNvpvar(data);
+
+			// Response
+			var dict = conn.HttpPost(qs, form);
+			return new TransactionResponse
+			       {
+					   RequestId = dict["requestid"],
+					   PaymentMethodRef = dict["paymentmethodref"],
+					   CustomerRef = dict["customerref"],
+					   TransactionRef = dict["transactionref"],
+					   StartDate = VancoConnection.ParseDate(dict["startdate"]),
+			       };
+		}
+	};
+
+	public class TransactionResponse
+	{
+		public string RequestId { get; set; }
+		public string PaymentMethodRef { get; set; }
+		public string CustomerRef { get; set; }
+		public string TransactionRef { get; set; }
+		public DateTime? StartDate { get; set; }
+	};
+
+	public enum AccountTypes
+	{
+		C, // checking
+		S, // saving
+		CC, // credit-card
+	};
+
+	public enum CardTypes
+	{
+		Credit,
+		Debit,
+	}
+
+	public enum CardBrands
+	{
+		Visa,
+		MasterCard,
+		AmericanExpress,
+		Discover,
+	};
+
+	public enum Frequencies
+	{
+		O, // one-time
+		M, // monthly
+		W, // weekly
+		BW, // bi-weekly
+		Q, // quarterly
+		A, // annual
+	};
+
+	public enum TransactionTypes
+	{
+		PPD, // Consumer to Business (Written authorization required)
+		CCD, // Business to Business (Written authorization required)
+		WEB, // Web (Customer initiated through a website)
+		TEL, // Telephone (Voice recorded authorization required)
 	};
 }
