@@ -1,5 +1,6 @@
 ﻿
 using System;
+using System.Configuration;
 using Vanco;
 
 namespace VancoTest
@@ -9,31 +10,32 @@ namespace VancoTest
 		private static void Main()
 		{
 			var cust = new
-			           {
-				           Id = "1",
-				           Name = "Test",
-				           Email = "test@example.com",
-				           Address1 = "123 Main St",
+					   {
+						   Id = "3",
+						   Name = "Test",
+						   Email = "test@example.com",
+						   Address1 = "123 Main St",
 						   City = "Charlotte",
 						   State = "NC",
 						   Zip = "29028",
-			           };
+					   };
 
 			var card = new
-			           {
-						   AccountType = AccountTypes.CC,
-				           NameOnCard = "Test",
-				           AccountNumber = "36555500001111",
-				           ExpMonth = "12",
-				           ExpYear = "14",
-			           };
+					   {
+						   AccountType = AccountTypes.C,
+						   NameOnCard = "Test",
+						   AccountNumber = "4012000033330026",
+						   RoutingNumber = "123456780",
+						   ExpMonth = (string)null,
+						   ExpYear = (string)null,
+					   };
 
 			var trnx = new
-			           {
-				           Amount = 1234.56m,
-			           };
+					   {
+						   Amount = 1234.56m,
+					   };
 
-			var conn = new VancoConnection();
+			var conn = new VancoConnection(ConfigurationManager.ConnectionStrings["Vanco"].ConnectionString);
 
 			// Login
 			var loginRequest = new LoginRequest();
@@ -42,20 +44,22 @@ namespace VancoTest
 
 			// Add Payment method
 			var eftRequest = new EftRequest
-			                 {
-				                 CustomerId = cust.Id,
-				                 Name = cust.Name,
-				                 Email = cust.Email,
-				                 BillingAddr1 = cust.Address1,
-				                 BillingCity = cust.City,
-				                 BillingState = cust.State,
-				                 BillingZip = cust.Zip,
+							 {
+								 CustomerId = cust.Id,
+								 AddNewCustomer = true,
+								 Name = cust.Name,
+								 Email = cust.Email,
+								 BillingAddr1 = cust.Address1,
+								 BillingCity = cust.City,
+								 BillingState = cust.State,
+								 BillingZip = cust.Zip,
 								 AccountType = card.AccountType,
-				                 NameOnCard = card.NameOnCard,
-				                 AccountNumber = card.AccountNumber,
-				                 ExpMonth = card.ExpMonth,
-				                 ExpYear = card.ExpYear,
-			                 };
+								 NameOnCard = card.NameOnCard,
+								 AccountNumber = card.AccountNumber,
+								 RoutingNumber = card.RoutingNumber,
+								 ExpMonth = card.ExpMonth,
+								 ExpYear = card.ExpYear,
+							 };
 			var eftResponse = eftRequest.Execute(conn);
 			Console.WriteLine("PaymentMethodRef: " + eftResponse.PaymentMethodRef);
 
@@ -71,11 +75,15 @@ namespace VancoTest
 			var trnxRequest = new TransactionRequest
 					   {
 						   CustomerId = cust.Id,
-						   PaymentMethod = methodsResponse.PaymentMethods[0],
+						   PaymentMethodRef = methodsResponse.PaymentMethods[methodsResponse.PaymentMethods.Count - 1].PaymentMethodRef,
 						   Amount = trnx.Amount,
 						   FrequencyCode = Frequencies.O,
 					   };
 			var trnxResponse = trnxRequest.Execute(conn);
+			if (!string.IsNullOrWhiteSpace(trnxResponse.ErrorList))
+			{
+				Console.WriteLine("Error: " + VancoConnection.GetErrorMessages(trnxResponse.ErrorList));
+			}
 			Console.WriteLine("TrnxId: " + trnxResponse.TransactionRef);
 
 			// Logout
